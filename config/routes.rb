@@ -7,4 +7,14 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   # root "posts#index"
+  # For details on the DSL available within this file, see https://guides.rubyonrails.org/routing.html
+  namespace :api do
+    namespace :v1 do
+      # Authentication routes for the three-legged OAuth flow
+      get "auth/login", to: "auth#login"
+      get "auth/callback", to: "auth#callback"
+      get "auth/status", to: "auth#status"
+      post "auth/logout", to: "auth#logout"
+    end
+  end
 end
