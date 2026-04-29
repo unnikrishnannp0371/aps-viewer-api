@@ -154,6 +154,18 @@ module Auth
         Rails.logger.error("APS Refresh Error: #{e.message}")
         nil
       end
+
+      def fetch_user_info(access_token)
+        response = RestClient.get(
+          "https://api.userprofile.autodesk.com/userinfo",
+          Authorization: "Bearer #{access_token}",
+          Accept: "application/json"
+        )
+        JSON.parse(response.body)
+      rescue RestClient::ExceptionWithResponse => e
+        Rails.logger.error("APS User Info Error: #{e.response.body}")
+        raise StandardError, "Failed to fetch user info"
+      end
     end
   end
 end

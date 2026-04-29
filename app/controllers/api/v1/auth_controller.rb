@@ -1,5 +1,5 @@
 class Api::V1::AuthController < ApplicationController
-  before_action :validate_token
+  before_action :validate_token, only: [ :status ]
 
   # Initiates the three-legged OAuth flow by redirecting the user to the authorization URL
   def login
@@ -19,28 +19,31 @@ class Api::V1::AuthController < ApplicationController
     session[:aps_refresh_token] = token_response["refresh_token"]
     session[:aps_expires_at]    = Time.current.to_i + token_response["expires_in"].to_i
 
-    redirect_to "http://localhost:5173/dashboard", allow_other_host: true
+    redirect_to "http://localhost:4200/dashboard", allow_other_host: true
   end
 
   # Endpoint to check if the user is authenticated and return user information
   def status
     if session[:aps_access_token].present? && Time.current.to_i < session[:aps_expires_at].to_i
+      user_info = Auth::AuthService.fetch_user_info(session[:aps_access_token])
+      p user_info
       render json: {
         # TODO: Replace with actual user info retrieval logic
         authenticated: true,
         user: {
-          name: "Unnikrishnan",
-          email: "..."
+          name: user_info["name"],
+          email: user_info["email"],
+          job_title: user_info["job_title"]
         }
       }
     else
       render json: { authenticated: false }
     end
+  end
 
-    def logout
-      reset_session
-      render json: { message: "Logged out successfully" }
-    end
+  def logout
+    reset_session
+    render json: { message: "Logged out successfully" }
   end
 
   private
