@@ -15,6 +15,12 @@ Rails.application.routes.draw do
       get "auth/callback", to: "auth#callback"
       get "auth/status", to: "auth#status"
       post "auth/logout", to: "auth#logout"
+
+      # hubs and projects routes
+      get "hubs", to: "hubs#index"
+      get "hubs/:hub_id/projects", to: "hubs#projects"
+      get "hubs/:hub_id/projects/:project_id/folders", to: "projects#top_folders"
+      get "projects/:project_id/folders/:folder_id/contents", to: "folders#contents"
     end
   end
 end
