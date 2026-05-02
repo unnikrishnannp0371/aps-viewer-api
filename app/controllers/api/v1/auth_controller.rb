@@ -26,7 +26,6 @@ class Api::V1::AuthController < ApplicationController
   def status
     if session[:aps_access_token].present? && Time.current.to_i < session[:aps_expires_at].to_i
       user_info = Auth::AuthService.fetch_user_info(session[:aps_access_token])
-      p user_info
       render json: {
         # TODO: Replace with actual user info retrieval logic
         authenticated: true,
