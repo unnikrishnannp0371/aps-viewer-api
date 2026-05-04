@@ -1,32 +1,48 @@
 class Api::V1::SharesController < ApplicationController
-  before_action :validate_token
+  before_action :validate_token, only: [ :create ]
 
   def create
-    urn       = params[:urn]
+    urn = params[:urn]
     file_name = params[:file_name]
-    expires_in_days = params[:expires_in_days]&.to_i || 30
+    expiry_days = params[:expires_in_days].to_i
+    unless SharedLink.expiry_days.values.include?(expiry_days)
+      return render json: { error: "Invalid expiry" }, status: :unprocessable_entity
+    end
 
-    token = generate_token
-    expires_at = expires_in_days.days.from_now
+    enum_key = SharedLink.expiry_days.key(expiry_days)
 
-    shared_link = SharedLink.create!(
-      token:      token,
-      urn:        urn,
-      file_name:  file_name,
-      expires_at: expires_at
+    shared_link = SharedLink.find_or_initialize_by(
+      urn: urn,
+      file_name: file_name,
+      expiry_days: enum_key
     )
 
-    render json: {
-      url:        "#{request.base_url}/viewer/#{token}",
-      token:      token,
-      expires_at: shared_link.expires_at,
-      file_name:  file_name
-    }
+    if shared_link.new_record? || shared_link.expired?
+      shared_link.token = generate_token
+      shared_link.expires_at = expiry_days.days.from_now
+      shared_link.save!
+    end
+
+    render json: format_response(shared_link), status: :created
+
   rescue StandardError => e
     render json: { error: e.message }, status: :bad_gateway
   end
 
   private
+
+  def frontend_url
+    ENV.fetch("FRONTEND_URL", request.base_url)
+  end
+
+  def format_response(link)
+    {
+      url: "#{frontend_url}/view/#{link.token}",
+      token: link.token,
+      expires_at: link.expires_at,
+      file_name: link.file_name
+    }
+  end
 
   def generate_token
     loop do
@@ -36,9 +52,9 @@ class Api::V1::SharesController < ApplicationController
   end
 
   def validate_token
-    unless current_access_token
-      render json: { error: "Unauthorized" }, status: :unauthorized
-    end
+    return if current_access_token
+
+    render json: { error: "Unauthorized" }, status: :unauthorized
   end
 
   def current_access_token

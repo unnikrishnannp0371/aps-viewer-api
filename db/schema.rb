@@ -10,18 +10,20 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_02_070341) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_04_095040) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "shared_links", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
+    t.integer "expiry_days", null: false
     t.string "file_name"
     t.string "token", null: false
     t.datetime "updated_at", null: false
     t.string "urn", null: false
     t.integer "view_count", default: 0
     t.index ["token"], name: "index_shared_links_on_token", unique: true
+    t.index ["urn", "file_name", "expiry_days"], name: "index_shared_links_on_urn_and_file_name_and_expiry_days", unique: true
   end
 end
