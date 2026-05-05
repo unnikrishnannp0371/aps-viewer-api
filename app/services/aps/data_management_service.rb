@@ -24,13 +24,15 @@ module Aps
       # Fetches the list of hubs accessible to the authenticated user
       def get_hubs(access_token)
         data = get("/project/v1/hubs", access_token)
-        data["data"].map do |hub|
-          {
-            id: encode_id(hub["id"]),
-            name: hub["attributes"]["name"],
-            type: hub.dig("attributes", "extension", "type")
-          }
-        end
+        data["data"]
+          .select { |hub| hub.dig("attributes", "extension", "type") == "hubs:autodesk.bim360:Account" }
+          .map do |hub|
+            {
+              id:   encode_id(hub["id"]),
+              name: hub["attributes"]["name"],
+              type: hub.dig("attributes", "extension", "type")
+            }
+          end
       end
 
       # Fetches the list of projects within a specific hub
