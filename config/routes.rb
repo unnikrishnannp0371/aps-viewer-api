@@ -21,6 +21,18 @@ Rails.application.routes.draw do
       get "hubs/:hub_id/projects", to: "hubs#projects"
       get "hubs/:hub_id/projects/:project_id/folders", to: "projects#top_folders"
       get "projects/:project_id/folders/:folder_id/contents", to: "folders#contents"
+
+      # items versions
+      get "projects/:project_id/items/:item_id/versions", to: "items#versions"
+
+      # translation and polling api
+      post "translate", to: "translations#create"
+      get "translate/:urn/status", to: "translations#status"
+
+      # sharing url
+      post "share", to: "shares#create"
     end
   end
+  # Public viewer
+  get "viewer/:token", to: "api/v1/viewer#show"
 end

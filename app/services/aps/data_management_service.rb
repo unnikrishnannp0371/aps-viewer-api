@@ -1,6 +1,6 @@
+require_relative "base"
 module Aps
   class DataManagementService
-    BASE_URL = ENV["APS_BASE_URL"]
     class << self
       # ----------------------------
       # API Methods
@@ -67,20 +67,50 @@ module Aps
         decoded_project_id = decode_id(project_id)
         decoded_folder_id  = decode_id(folder_id)
         data = get("/data/v1/projects/#{decoded_project_id}/folders/#{decoded_folder_id}/contents", access_token)
+
+        tip_urns = {}
+        (data["included"] || []).each do |version|
+          vid = version.dig("relationships", "item", "data", "id")
+          urn = version.dig("relationships", "derivatives", "data", "id")
+          tip_urns[vid] = urn if vid && urn
+        end
+
         data["data"].map do |item|
+          raw_item_id = item["id"]
           {
-            content_id: encode_id(item["id"]),
-            folder_id:  folder_id,
-            name:       item.dig("attributes", "displayName"),
-            type:       item.dig("attributes", "extension", "type")
+            content_id:  encode_id(raw_item_id),
+            folder_id:   folder_id,
+            project_id:  project_id,
+            name:        item.dig("attributes", "displayName"),
+            type:        item.dig("attributes", "extension", "type"),
+            tip_urn:     tip_urns[raw_item_id] ? encode_id(tip_urns[raw_item_id]) : nil
           }
         end
       end
+
+      def get_item_versions(project_id, item_id, access_token)
+        decoded_project_id = decode_id(project_id)
+        decoded_item_id = decode_id(item_id)
+
+        data = get("/data/v1/projects/#{decoded_project_id}/items/#{decoded_item_id}/versions")
+        data["data"].map do |version|
+          urn = version.dig("relationships", "derivatives", "data", "id")
+          {
+            version_id: encode_id(version["id"]),
+            version_urn: urn ? encode_id(urn) : nil,
+            version_number: version.dig("attributes", "versionNumber"),
+            file_type:      version.dig("attributes", "fileType"),
+            created_at:     version.dig("attributes", "createTime"),
+            created_by:     version.dig("attributes", "createUserName")
+          }
+        end
+      end
+
       private
 
       # Helper method to perform a GET request to the APS API with the appropriate headers and error handling
       def get(path, access_token)
-        response = RestClient.get("#{BASE_URL}#{path}",
+        response = RestClient.get("#{Aps::BASE_URL}#{path}",
                                   { Authorization: "Bearer #{access_token}" })
         JSON.parse(response.body)
       rescue RestClient::ExceptionWithResponse => e
