@@ -91,14 +91,14 @@ module Aps
       def get_item_versions(project_id, item_id, access_token)
         decoded_project_id = decode_id(project_id)
         decoded_item_id = decode_id(item_id)
-
-        data = get("/data/v1/projects/#{decoded_project_id}/items/#{decoded_item_id}/versions")
+        data = get("/data/v1/projects/#{decoded_project_id}/items/#{decoded_item_id}/versions", access_token)
         data["data"].map do |version|
           urn = version.dig("relationships", "derivatives", "data", "id")
           {
             version_id: encode_id(version["id"]),
             version_urn: urn ? encode_id(urn) : nil,
             version_number: version.dig("attributes", "versionNumber"),
+            name:           version.dig("attributes", "displayName"),
             file_type:      version.dig("attributes", "fileType"),
             created_at:     version.dig("attributes", "createTime"),
             created_by:     version.dig("attributes", "createUserName")
