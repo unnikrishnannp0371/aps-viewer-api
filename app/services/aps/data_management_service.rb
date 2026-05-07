@@ -110,7 +110,7 @@ module Aps
 
       # Helper method to perform a GET request to the APS API with the appropriate headers and error handling
       def get(path, access_token)
-        response = RestClient.get("#{Aps::BASE_URL}#{path}",
+        response = RestClient.get("#{Aps::Base::BASE_URL}#{path}",
                                   { Authorization: "Bearer #{access_token}" })
         JSON.parse(response.body)
       rescue RestClient::ExceptionWithResponse => e
