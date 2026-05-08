@@ -7,6 +7,7 @@ RUN apt-get update -qq && \
       git \
       curl \
       pkg-config \
+      libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
