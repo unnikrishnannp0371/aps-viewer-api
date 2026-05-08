@@ -23,7 +23,7 @@ module Aps
         }.to_json
 
         response = RestClient.post(
-          "#{Aps::BASE_URL}/modelderivative/v2/designdata/job",
+          "#{Aps::Base::BASE_URL}/modelderivative/v2/designdata/job",
           payload,
           Authorization: "Bearer #{access_token}",
           "Content-Type": "application/json",
@@ -50,7 +50,7 @@ module Aps
         url_urn = URI.encode_www_form_component(aps_urn)
 
         response = RestClient.get(
-          "#{Aps::BASE_URL}/modelderivative/v2/designdata/#{url_urn}/manifest",
+          "#{Aps::Base::BASE_URL}/modelderivative/v2/designdata/#{url_urn}/manifest",
           Authorization: "Bearer #{access_token}",
           Accept: "application/json"
         )
