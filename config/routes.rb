@@ -1,38 +1,48 @@
-Rails.application.routes.draw do
-  # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
+# config/routes.rb
 
-  # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
-  # Can be used by load balancers and uptime monitors to verify that the app is live.
+Rails.application.routes.draw do
+  # ── Health check ───────────────────────────────────────────────────────────
   get "/health", to: proc { [ 200, {}, [ "ok" ] ] }
 
-  # Defines the root path route ("/")
-  # root "posts#index"
-  # For details on the DSL available within this file, see https://guides.rubyonrails.org/routing.html
+  # ── API ────────────────────────────────────────────────────────────────────
   namespace :api do
     namespace :v1 do
-      # Authentication routes for the three-legged OAuth flow
-      get "auth/login", to: "auth#login"
-      get "auth/callback", to: "auth#callback"
-      get "auth/status", to: "auth#status"
-      post "auth/logout", to: "auth#logout"
+      # Auth
+      get  "auth/login",        to: "auth#login"
+      get  "auth/callback",     to: "auth#callback"
+      get  "auth/status",       to: "auth#status"
+      post "auth/logout",       to: "auth#logout"
+      get  "auth/viewer-token", to: "auth#viewer_token"
 
-      # hubs and projects routes
-      get "hubs", to: "hubs#index"
-      get "hubs/:hub_id/projects", to: "hubs#projects"
-      get "hubs/:hub_id/projects/:project_id/folders", to: "projects#top_folders"
+      # Hubs + Projects
+      get "hubs",                        to: "hubs#index"
+      get "hubs/:hub_id/projects",       to: "hubs#projects"
+
+      # Folders + Items
+      get "hubs/:hub_id/projects/:project_id/folders",        to: "projects#top_folders"
       get "projects/:project_id/folders/:folder_id/contents", to: "folders#contents"
+      get "projects/:project_id/items/:item_id/versions",     to: "items#versions"
 
-      # items versions
-      get "projects/:project_id/items/:item_id/versions", to: "items#versions"
+      # Model Derivative (translate)
+      post "translate",             to: "translations#create"
+      get  "translate/:urn/status", to: "translations#status"
 
-      # translation and polling api
-      post "translate", to: "translations#create"
-      get "translate/:urn/status", to: "translations#status"
-
-      # sharing url
+      # Share
       post "share", to: "shares#create"
+
+      # Issues
+      get "projects/:project_id/issues",     to: "issues#index"
+      get "projects/:project_id/issues/:id", to: "issues#show"
+
+      # RFIs
+      get "projects/:project_id/rfis",        to: "rfis#index"
+      get "projects/:project_id/rfis/counts", to: "rfis#status_counts"
+
+      # Health score
+      get "projects/:project_id/health", to: "health#index"
     end
   end
-  # Public viewer
+
+  # ── Viewer (outside api namespace — served by separate controller) ──────────
   get "viewer/:token", to: "api/v1/viewer#show"
 end

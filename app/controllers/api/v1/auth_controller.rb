@@ -1,6 +1,8 @@
 class Api::V1::AuthController < ApplicationController
-  before_action :validate_token, only: [ :status ]
+  include Authenticatable
 
+  before_action :validate_token, only: [ :status ]
+  before_action :require_3_legged_token, only: [ :viewer_token ]
   # Initiates the three-legged OAuth flow by redirecting the user to the authorization URL
   def login
     url = Auth::AuthService.auth_url(callback_url)
@@ -19,7 +21,8 @@ class Api::V1::AuthController < ApplicationController
     session[:aps_refresh_token] = token_response["refresh_token"]
     session[:aps_expires_at]    = Time.current.to_i + token_response["expires_in"].to_i
 
-    redirect_to "http://localhost:4200/dashboard", allow_other_host: true
+    redirect_to ENV.fetch("FRONTEND_DASHBOARD_URL", "http://localhost:4200/dashboard"),
+                allow_other_host: true
   end
 
   # Endpoint to check if the user is authenticated and return user information
@@ -43,6 +46,21 @@ class Api::V1::AuthController < ApplicationController
   def logout
     reset_session
     render json: { message: "Logged out successfully" }
+  end
+
+
+  # Returns the current 3-legged token for use in the viewer.
+  # ACC models require a 3-legged token — 2-legged doesn't have
+  # access to models uploaded through ACC.
+  def viewer_token
+    token = current_access_token
+    unless token
+      render json: { error: "Not authenticated" }, status: :unauthorized
+      return
+    end
+    render json: { access_token: token, expires_in: 3600 }
+  rescue StandardError => e
+    render json: { error: e.message }, status: :bad_gateway
   end
 
   private
