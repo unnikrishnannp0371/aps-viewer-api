@@ -7,11 +7,12 @@
 
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
-    origins /http:\/\/localhost:\d+/
+    origins ENV.fetch("FRONTEND_ORIGIN", "http://localhost:4200")
 
     resource "*",
       headers: :any,
       methods: [ :get, :post, :put, :patch, :delete, :options, :head ],
-      credentials: true
+      credentials: true,
+      expose: [ "Set-Cookie" ]
   end
 end
