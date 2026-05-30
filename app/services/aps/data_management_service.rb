@@ -1,5 +1,3 @@
-# app/services/aps/data_management_service.rb
-
 require_relative "../application_service"
 require_relative "base"
 require_relative "../concerns/aps_http"

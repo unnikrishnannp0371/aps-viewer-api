@@ -1,9 +1,16 @@
-# app/services/auth/auth_service.rb
-
 require "json"
 require "base64"
 require "uri"
 require "rest-client"
+
+
+# TODO: Refer https://aps.autodesk.com/en/docs/ssa/v1/developers_guide/api-basics/
+# for server to server authentication for future refernce
+# either this or create an admin user where user is added to the project with max or
+# required role, so that the login happen via that user to ACC
+#
+# and in our app we have to have proper user management and role based authentication
+
 
 module Auth
   class AuthService

@@ -1,5 +1,3 @@
-# app/services/aps/translation_service.rb
-
 require_relative "base"
 require "uri"
 

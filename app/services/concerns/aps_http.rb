@@ -1,5 +1,3 @@
-# app/services/concerns/aps_http.rb
-#
 # Mixin for APS REST calls. Include in any service that talks to the
 # Autodesk Platform Services API.
 #
