@@ -1,5 +1,3 @@
-# app/services/acc/rfis_service.rb
-
 require "cgi"
 require_relative "../concerns/aps_http"
 

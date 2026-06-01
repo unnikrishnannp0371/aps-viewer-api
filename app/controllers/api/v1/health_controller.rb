@@ -1,9 +1,3 @@
-# app/controllers/api/v1/health_controller.rb
-#
-# Returns a project health score calculated from live ACC data.
-# Currently uses Issues + RFIs — other domains return neutral
-# scores until their APIs are connected.
-
 class Api::V1::HealthController < ApplicationController
   include Authenticatable
   before_action :require_3_legged_token
@@ -21,15 +15,15 @@ class Api::V1::HealthController < ApplicationController
       return
     end
 
-    # Decode project_id to bare ACC GUID for RFI API
-    acc_project_id = ApplicationService.acc_project_id(project_id)
+    project_id = ApplicationService.acc_project_id(project_id)
 
-    # Fetch all issues and RFIs for health calculation
-    # RFI fetch is non-fatal — falls back to neutral score if it fails
-    issues = issues_service.get_all_for_health(container_id)
-    rfis   = Acc::RfisService.get_all_for_health(acc_project_id, current_access_token)
+    # All three fetches are independent — RFI and Submittal failures
+    # are non-fatal, falling back to neutral domain scores (50)
+    issues     = issues_service.get_all_for_health(container_id)
+    rfis       = Acc::RfisService.get_all_for_health(project_id, current_access_token)
+    submittals = Acc::SubmittalsService.get_all_for_health(project_id, current_access_token)
 
-    render json: Acc::HealthService.calculate(issues, rfis)
+    render json: Acc::HealthService.calculate(issues, rfis: rfis, submittals: submittals)
 
   rescue StandardError => e
     Rails.logger.error("HealthController#index — #{e.message}")

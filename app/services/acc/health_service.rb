@@ -1,101 +1,126 @@
-# app/services/acc/health_service.rb
-#
 # Calculates a project health score (0–100) from live ACC data.
 #
 # Formula is intentionally extensible — each domain returns a sub-score
 # and a weight.  Domains not yet connected return a neutral score (50)
 # so the overall score is still meaningful with partial data.
 #
+# app/services/acc/health_service.rb
+#
 # Weights:
 #   Issues      40%  ← live
 #   RFIs        25%  ← live
-#   Submittals  20%  ← neutral until Submittal API connected
+#   Submittals  20%  ← live
 #   Clashes     15%  ← neutral until Clash API connected
 
 module Acc
   class HealthService
     class << self
-      # @param issues [Array<Hash>]  formatted issues from Acc::IssuesService
-      # @param rfis   [Array<Hash>]  formatted rfis   from Acc::RfisService
-      # @return [Hash] full health report
-      def calculate(issues, rfis)
+      def calculate(issues, rfis: [], submittals: [])
         today = Date.today
 
         domain_scores = {
-          issues:     { score: issues_score(issues, today), weight: 0.40 },
-          rfis:       { score: rfi_score(rfis, today),      weight: 0.25 },
-          submittals: { score: 50,                          weight: 0.20 }, # neutral — not yet connected
-          clashes:    { score: 50,                          weight: 0.15 }  # neutral — not yet connected
+          issues:     { score: issues_score(issues, today),      weight: 0.40 },
+          rfis:       { score: rfi_score(rfis, today),           weight: 0.25 },
+          submittals: { score: submittal_score(submittals, today), weight: 0.20 },
+          clashes:    { score: 50,                               weight: 0.15 }
         }
 
         overall = calculate_overall(domain_scores)
 
         {
-          overall:      overall,
-          grade:        grade(overall),
-          label:        label(overall),
+          overall:       overall,
+          grade:         grade(overall),
+          label:         label(overall),
           domain_scores: domain_scores,
-          signals:      build_signals(issues, rfis, today),
+          signals:       build_signals(issues, rfis, submittals, today),
           calculated_at: Time.current.iso8601
         }
       end
 
       private
 
-      # ── Issues Score (0-100) ──────────────────────────────────────────────
-      #
-      # Starts at 100 and deducts for risk signals; awards for recent progress.
+      # ── Issues Score ────────────────────────────────────────────────────────
 
       def issues_score(issues, today)
         return 50 if issues.nil? || issues.empty?
 
         score = 100.0
-        score -= [ overdue_open(issues, today).count    * 10, 50 ].min  # max −50
-        score -= [ stale_open(issues, today).count      *  5, 30 ].min  # max −30
-        score -= [ unassigned_open(issues).count        *  3, 15 ].min  # max −15
-        score += [ closed_recently(issues, today, days: 7).count * 5, 20 ].min  # max +20
-
+        score -= [ overdue_open(issues, today).count    * 10, 50 ].min
+        score -= [ stale_open(issues, today).count      * 5,  30 ].min
+        score -= [ unassigned_open(issues).count        * 3,  15 ].min
+        score += [ closed_recently(issues, today, days: 7).count * 5, 20 ].min
         score.clamp(0, 100).round
       end
 
-      # ── RFI Score (0-100) ─────────────────────────────────────────────────
-      #
-      # Same deduction structure as issues_score.
-      # Overdue RFIs carry the heaviest penalty; high-priority / impactful RFIs
-      # trigger a moderate deduction.
+      # ── RFI Score ───────────────────────────────────────────────────────────
 
       def rfi_score(rfis, today)
         return 50 if rfis.nil? || rfis.empty?
 
-        active  = rfis.select { |r| %w[open submitted answered].include?(r[:status]) }
-        score   = 100.0
+        active = rfis.select { |r| %w[open submitted answered].include?(r[:status].to_s) }
+        score  = 100.0
 
-        overdue       = active.select { |r| r[:due_date].present? && Date.parse(r[:due_date].to_s) < today }
-        high_priority = active.select { |r| r[:priority] == "High" }
-        impactful     = active.select { |r| r[:cost_impact] == "Yes" || r[:schedule_impact] == "Yes" }
-
-        score -= [ overdue.count       * 10, 50 ].min  # max −50 for overdue
-        score -= [ high_priority.count *  5, 20 ].min  # max −20 for high-priority open RFIs
-        score -= [ impactful.count     *  5, 20 ].min  # max −20 for cost/schedule-impacting RFIs
-
-        # Award points for RFIs closed in the last 7 days.
-        recently_closed = rfis.select do |r|
-          r[:status] == "closed" &&
-            r[:updated_at].present? &&
-            Date.parse(r[:updated_at].to_s) >= (today - 7)
+        overdue = active.select do |r|
+          r[:due_date].present? && Date.parse(r[:due_date].to_s) < today
         end
-        score += [ recently_closed.count * 5, 20 ].min  # max +20
+        score -= [ overdue.count * 10, 50 ].min
+        score -= [ active.select { |r| r[:priority] == "High" }.count * 5, 20 ].min
+        score -= [ active.select { |r| r[:cost_impact] == "Yes" || r[:schedule_impact] == "Yes" }.count * 5, 20 ].min
+        score += [ rfis.select { |r|
+          r[:status].to_s == "closed" &&
+            r[:updated_at].present? &&
+            Date.parse(r[:updated_at].to_s) >= (today - 30)
+        }.count * 3, 15 ].min
 
         score.clamp(0, 100).round
       end
 
-      # ── Overall Score ─────────────────────────────────────────────────────
+      # ── Submittal Score ─────────────────────────────────────────────────────
+      #
+      # Starts at 100, deducts for:
+      #   - Overdue active submittals    (up to −50)
+      #   - High priority active         (up to −20)
+      #   - Awaiting review > 7 days     (up to −20)
+      # Awards for:
+      #   - Closed this month            (up to +15)
+
+      def submittal_score(submittals, today)
+        return 50 if submittals.nil? || submittals.empty?
+
+        active = submittals.select { |s| %w[required open draft].include?(s[:status].to_s) }
+        score  = 100.0
+
+        overdue = active.select do |s|
+          due = s[:due_date] || s[:submitter_due_date] || s[:required_on_job]
+          due.present? && Date.parse(due.to_s) < today
+        end
+        score -= [ overdue.count * 10, 50 ].min
+        score -= [ active.select { |s| s[:priority] == "High" }.count * 5, 20 ].min
+
+        stale_review = active.select do |s|
+          s[:sent_to_review].present? &&
+            s[:received_from_review].blank? &&
+            Date.parse(s[:sent_to_review].to_s) < (today - 7)
+        end
+        score -= [ stale_review.count * 5, 20 ].min
+
+        closed_month = submittals.select do |s|
+          s[:status].to_s == "closed" &&
+            s[:updated_at].present? &&
+            Date.parse(s[:updated_at].to_s) >= (today - 30)
+        end
+        score += [ closed_month.count * 3, 15 ].min
+
+        score.clamp(0, 100).round
+      end
+
+      # ── Overall ─────────────────────────────────────────────────────────────
 
       def calculate_overall(domain_scores)
         domain_scores.sum { |_, ds| ds[:score] * ds[:weight] }.round
       end
 
-      # ── Grade + Label ─────────────────────────────────────────────────────
+      # ── Grade + Label ───────────────────────────────────────────────────────
 
       def grade(score)
         case score
@@ -117,67 +142,57 @@ module Acc
         end
       end
 
-      # ── Signals ───────────────────────────────────────────────────────────
-      def build_signals(issues, rfis, today)
-        # ── Issues signals ───────────────────────────────────────
-        open_issues = issues.select { |i| i[:status] == "open" }
-        overdue_i   = overdue_open(issues, today)
-        stale_i     = stale_open(issues, today)
-        unassigned  = unassigned_open(issues)
-        closed_week = closed_recently(issues, today, days: 7)
+      # ── Signals ─────────────────────────────────────────────────────────────
 
-        # ── RFI signals ──────────────────────────────────────────
-        active_rfis    = rfis.select { |r| %w[open submitted answered].include?(r[:status]) }
-        overdue_r      = active_rfis.select { |r| r[:due_date].present? && Date.parse(r[:due_date].to_s) < today }
-        high_pri_rfis  = active_rfis.select { |r| r[:priority] == "High" }
+      def build_signals(issues, rfis, submittals, today)
+        # Issues signals
+        open_issues  = issues.select { |i| i[:status] == "open" }
+        overdue_i    = overdue_open(issues, today)
+        stale_i      = stale_open(issues, today)
+        unassigned_i = unassigned_open(issues)
+        closed_week  = closed_recently(issues, today, days: 7)
+
+        # RFI signals
+        active_rfis    = rfis.select { |r| %w[open submitted answered].include?(r[:status].to_s) }
+        overdue_rfis   = active_rfis.select { |r| r[:due_date].present? && Date.parse(r[:due_date].to_s) < today }
         impactful_rfis = active_rfis.select { |r| r[:cost_impact] == "Yes" || r[:schedule_impact] == "Yes" }
 
-        # # ── Submittal signals ─────────────────────────────────────
-        # active_subs   = submittals.select { |s| %w[submitted under_review revise_and_resubmit].include?(s[:status]) }
-        # overdue_s     = active_subs.select { |s| s[:due_date].present? && Date.parse(s[:due_date].to_s) < today }
-        # revise_resub  = submittals.select { |s| s[:status] == "revise_and_resubmit" }
-        # under_review  = submittals.select { |s| s[:status] == "under_review" }
+        # Submittal signals
+        active_subs     = submittals.select { |s| %w[required open draft].include?(s[:status].to_s) }
+        overdue_subs    = active_subs.select do |s|
+          due = s[:due_date] || s[:submitter_due_date] || s[:required_on_job]
+          due.present? && Date.parse(due.to_s) < today
+        end
+        awaiting_review = active_subs.select { |s| s[:sent_to_review].present? && s[:received_from_review].blank? }
 
         [
-          # Issues
-          signal("open_issues",      "Open Issues",         open_issues.count,
-                open_issues.count > 10 ? "critical" : open_issues.count > 5 ? "warning" : "good"),
-          signal("issues_overdue",   "Issues Overdue",      overdue_i.count,
-                overdue_i.count > 3 ? "critical" : overdue_i.count > 0 ? "warning" : "good"),
-          signal("issues_stale",     "Issues Stale 30d+",   stale_i.count,
-                stale_i.count > 5 ? "critical" : stale_i.count > 2 ? "warning" : "good"),
-          signal("issues_unassigned", "Issues Unassigned",   unassigned.count,
-                unassigned.count > 0 ? "warning" : "good"),
-          signal("issues_closed_week",  "Closed This Week",   closed_week.count,
-                closed_week.count > 0 ? "good" : "warning"),
-
-          # RFIs
-          signal("rfis_overdue",     "RFIs Overdue",        overdue_r.count,
-                overdue_r.count > 3 ? "critical" : overdue_r.count > 0 ? "warning" : "good"),
-          signal("rfis_high_priority", "RFIs High Priority", high_pri_rfis.count,
-                high_pri_rfis.count > 5 ? "critical" : high_pri_rfis.count > 0 ? "warning" : "good"),
-          signal("rfis_impactful",   "RFIs with Impact",    impactful_rfis.count,
-                impactful_rfis.count > 3 ? "critical" : impactful_rfis.count > 0 ? "warning" : "good")
-
-          # Submittals
-          #   signal("subs_overdue",     "Submittals Overdue",  overdue_s.count,
-          #         overdue_s.count > 3 ? "critical" : overdue_s.count > 0 ? "warning" : "good"),
-          #   signal("subs_revise",      "Revise & Resubmit",   revise_resub.count,
-          #         revise_resub.count > 3 ? "critical" : revise_resub.count > 0 ? "warning" : "good"),
-          #   signal("subs_under_review","Under Review",        under_review.count,
-          #         under_review.count > 10 ? "warning" : "good"),
+          { key: "open_issues",       label: "Open Issues",          value: open_issues.count,    severity: severity(open_issues.count,  10, 5) },
+          { key: "overdue_issues",    label: "Overdue Issues",       value: overdue_i.count,      severity: severity(overdue_i.count,    3, 1) },
+          { key: "stale_issues",      label: "Stale Issues",         value: stale_i.count,        severity: severity(stale_i.count,      5, 2) },
+          { key: "unassigned_issues", label: "Unassigned Issues",    value: unassigned_i.count,   severity: unassigned_i.count > 0 ? "warning" : "good" },
+          { key: "closed_this_week",  label: "Issues Closed (7d)",   value: closed_week.count,    severity: closed_week.count > 0 ? "good" : "warning" },
+          { key: "overdue_rfis",      label: "Overdue RFIs",         value: overdue_rfis.count,   severity: severity(overdue_rfis.count,   2, 1) },
+          { key: "impactful_rfis",    label: "RFIs with Impact",     value: impactful_rfis.count, severity: severity(impactful_rfis.count, 3, 1) },
+          { key: "overdue_subs",      label: "Overdue Submittals",   value: overdue_subs.count,   severity: severity(overdue_subs.count,   3, 1) },
+          { key: "awaiting_review",   label: "Awaiting Review",      value: awaiting_review.count, severity: severity(awaiting_review.count, 5, 2) }
         ]
       end
 
-      def signal(key, label, value, severity)
-        { key: key, label: label, value: value, severity: severity }
+      # Reusable severity helper — critical/warning/good based on thresholds
+      def severity(value, critical_threshold, warning_threshold)
+        if value >= critical_threshold    then "critical"
+        elsif value >= warning_threshold  then "warning"
+        else                                   "good"
+        end
       end
 
-      # ── Issue filters ─────────────────────────────────────────────────────
+      # ── Issue filters ───────────────────────────────────────────────────────
+
+      ACTIVE_ISSUE_STATUSES = %w[open pending in_review].freeze
 
       def overdue_open(issues, today)
         issues.select do |i|
-          i[:status] == "open" &&
+          ACTIVE_ISSUE_STATUSES.include?(i[:status]) &&
             i[:due_date].present? &&
             Date.parse(i[:due_date].to_s) < today
         end
