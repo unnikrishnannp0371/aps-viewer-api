@@ -43,6 +43,8 @@ gem "base64", "~> 0.3.0"
 gem "rest-client", "~> 2.1"
 # Use dotenv to manage environment variables
 gem "dotenv-rails"
+# The CSV library provides a complete interface to CSV files and data. It offers tools to enable you to read and write to and from Strings or IO objects, as needed.
+gem "csv", "~> 3.0"
 
 
 group :development, :test do

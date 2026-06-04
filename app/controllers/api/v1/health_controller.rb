@@ -17,17 +17,11 @@ class Api::V1::HealthController < ApplicationController
 
     project_id = ApplicationService.acc_project_id(project_id)
 
-    # All three fetches are independent — RFI and Submittal failures
-    # are non-fatal, falling back to neutral domain scores (50)
     issues     = issues_service.get_all_for_health(container_id)
     rfis       = Acc::RfisService.get_all_for_health(project_id, current_access_token)
     submittals = Acc::SubmittalsService.get_all_for_health(project_id, current_access_token)
 
     render json: Acc::HealthService.calculate(issues, rfis: rfis, submittals: submittals)
-
-  rescue StandardError => e
-    Rails.logger.error("HealthController#index — #{e.message}")
-    render json: { error: e.message }, status: :bad_gateway
   end
 
   private

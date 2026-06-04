@@ -44,6 +44,8 @@ class Api::V1::AuthController < ApplicationController
   end
 
   def logout
+    token = session[:aps_access_token]
+    Auth::AuthService.revoke_token(token) if token.present?
     reset_session
     render json: { message: "Logged out successfully" }
   end

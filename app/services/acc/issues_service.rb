@@ -19,12 +19,14 @@ module Acc
       limit  = filters.delete("limit")&.to_i  || MAX_PER_PAGE
       offset = filters.delete("offset")&.to_i || 0
 
+      type_map = get_issue_type_map(container_id)
+      user_map = get_user_map(container_id)
+
       page_data = fetch_issues_page(container_id, filters, limit, offset)
       issues    = page_data["results"] || []
       total     = page_data.dig("pagination", "totalResults").to_i
 
-      # Fetch all issues once; share the result between counts, attention, and health.
-      all_formatted = fetch_all_formatted(container_id)
+      all_formatted = fetch_all_formatted(container_id, type_map, user_map)
 
       {
         total:       total,
@@ -34,8 +36,8 @@ module Acc
         by_type:     group_by_type(all_formatted),
         by_assignee: group_by_assignee(all_formatted),
         attention:   compute_attention(all_formatted),
-        recent_open: recent_open(issues),
-        issues:      enrich_with_risk(issues.map { |i| format_issue(i) })
+        recent_open: recent_open(issues, type_map, user_map),
+        issues:      enrich_with_risk(issues.map { |i| format_issue(i, type_map, user_map) })
       }
     end
 
@@ -44,9 +46,30 @@ module Acc
       format_issue(data)
     end
 
+    def get_issue_type_map(container_id)
+      data = get("/construction/issues/v1/projects/#{container_id}/issue-types?include=subtypes&limit=100", @token)
+      map = {}
+      (data["results"] || []).each do |type|
+        map[type["id"]] = type["title"]
+        (type["subtypes"] || []).each do |subtype|
+          map[subtype["id"]] = subtype["title"]
+        end
+      end
+      map
+    end
+
+    def get_user_map(container_id)
+      data = get("/construction/admin/v1/projects/#{container_id}/users?limit=100", @token)
+      (data["results"] || []).each_with_object({}) do |user, map|
+        map[user["autodeskId"]] = user["name"]
+      end
+    end
+
     # Lightweight interface for HealthService — returns all formatted issues.
     def get_all_for_health(container_id)
-      fetch_all_formatted(container_id)
+      type_map = get_issue_type_map(container_id)
+      user_map = get_user_map(container_id)
+      fetch_all_formatted(container_id, type_map, user_map)
     end
 
     # ── Class-method shim (backwards compat) ──────────────────────────────
@@ -70,8 +93,8 @@ module Acc
 
     # ── Fetchers ─────────────────────────────────────────────────────────
 
-    def fetch_all_formatted(container_id)
-      paginate(ISSUES_PATH[container_id], @token).map { |i| format_issue(i) }
+    def fetch_all_formatted(container_id, type_map = {}, user_map = {})
+      paginate(ISSUES_PATH[container_id], @token).map { |i| format_issue(i, type_map, user_map) }
     end
 
     def fetch_issues_page(container_id, filters, limit, offset)
@@ -152,32 +175,46 @@ module Acc
             .sort_by { |_, v| -v }.first(10).to_h
     end
 
-    def recent_open(issues)
+    def recent_open(issues, type_map = {}, user_map = {})
       issues.select { |i| i["status"] == "open" }
             .sort_by { |i| i["createdAt"] || "" }
             .last(5).reverse
-            .map { |i| format_issue(i) }
+            .map { |i| format_issue(i, type_map, user_map) }
     end
 
     # ── Formatting ────────────────────────────────────────────────────────
 
-    def format_issue(issue)
+    def format_issue(issue, type_map = {}, user_map = {})
+      linked  = issue.dig("linkedDocuments", 0)
+      details = linked&.dig("details")
+
+      assigned_to = if issue["assignedToType"] == "user"
+        user_map[issue["assignedTo"]] || "User #{issue["assignedTo"]&.first(8)}"
+      elsif issue["assignedToType"] == "company"
+        "Company"
+      end
+
       {
         id:             issue["id"],
         title:          issue["title"],
         status:         issue["status"],
-        issue_type:     issue["issueTypeLabel"]    || issue["issueTypeId"],
-        issue_sub_type: issue["issueSubtypeLabel"] || issue["issueSubtypeId"],
-        assigned_to:    issue["assignedToName"]    || issue["assignedTo"],
+        issue_type:     type_map[issue["issueTypeId"]]    || issue["issueTypeId"],
+        issue_sub_type: type_map[issue["issueSubtypeId"]] || issue["issueSubtypeId"],
+        assigned_to:    assigned_to,
         due_date:       issue["dueDate"],
         created_at:     issue["createdAt"],
         updated_at:     issue["updatedAt"],
-        created_by:     issue["createdBy"],
+        created_by:     user_map[issue["createdBy"]] || issue["createdBy"],
         location:       issue["locationDetails"],
         description:    issue["description"],
-        pushpin:        issue["placements"],
-        viewable_id:    issue.dig("linkedDocuments", 0, "urn"),
-        external_id:    issue["displayId"]
+        viewable_id:    linked&.dig("urn"),
+        external_id:    issue["displayId"],
+        pushpin: details ? {
+          location:      details.dig("position"),
+          objectId:      details.dig("objectId"),
+          viewable_guid: details.dig("viewable", "guid"),
+          seed_urn:      details.dig("viewerState", "seedURN")
+        } : nil
       }
     end
   end
