@@ -36,7 +36,7 @@ gem "image_processing", "~> 1.2"
 gem "rack-cors"
 
 # Use JSON for parsing and generating JSON
-gem "json", "~> 2.19", ">= 2.19.4"
+gem "json", "~> 2.19"
 # Use Base64 for encoding and decoding data
 gem "base64", "~> 0.3.0"
 # Use RestClient for making HTTP requests
