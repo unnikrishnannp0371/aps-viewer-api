@@ -60,6 +60,12 @@ module ApsHttp
     JSON.parse(response.body)
   rescue RestClient::ExceptionWithResponse => e
     Rails.logger.error("APS HTTP Error [GET #{path}]: #{e.response}")
-    raise StandardError, "APS request failed (#{e.response.code})"
+    case e.response.code
+    when 401 then raise ApsErrors::Unauthorized, "Autodesk token invalid or expired"
+    when 403 then raise ApsErrors::Forbidden,    "Access denied to this resource"
+    when 404 then raise ApsErrors::NotFound,     "Resource not found"
+    when 429 then raise ApsErrors::RateLimited,  "Autodesk API rate limit exceeded"
+    else          raise ApsErrors::ServerError,  "Autodesk API error (#{e.response.code})"
+    end
   end
 end

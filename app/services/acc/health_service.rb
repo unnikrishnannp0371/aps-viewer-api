@@ -33,7 +33,8 @@ module Acc
           label:         label(overall),
           domain_scores: domain_scores,
           signals:       build_signals(issues, rfis, submittals, today),
-          calculated_at: Time.current.iso8601
+          calculated_at: Time.current.iso8601,
+          data_available: issues.any? || rfis.any? || submittals.any?
         }
       end
 
@@ -166,15 +167,15 @@ module Acc
         awaiting_review = active_subs.select { |s| s[:sent_to_review].present? && s[:received_from_review].blank? }
 
         [
-          { key: "open_issues",       label: "Open Issues",          value: open_issues.count,    severity: severity(open_issues.count,  10, 5) },
-          { key: "overdue_issues",    label: "Overdue Issues",       value: overdue_i.count,      severity: severity(overdue_i.count,    3, 1) },
-          { key: "stale_issues",      label: "Stale Issues",         value: stale_i.count,        severity: severity(stale_i.count,      5, 2) },
-          { key: "unassigned_issues", label: "Unassigned Issues",    value: unassigned_i.count,   severity: unassigned_i.count > 0 ? "warning" : "good" },
-          { key: "closed_this_week",  label: "Issues Closed (7d)",   value: closed_week.count,    severity: closed_week.count > 0 ? "good" : "warning" },
-          { key: "overdue_rfis",      label: "Overdue RFIs",         value: overdue_rfis.count,   severity: severity(overdue_rfis.count,   2, 1) },
-          { key: "impactful_rfis",    label: "RFIs with Impact",     value: impactful_rfis.count, severity: severity(impactful_rfis.count, 3, 1) },
-          { key: "overdue_subs",      label: "Overdue Submittals",   value: overdue_subs.count,   severity: severity(overdue_subs.count,   3, 1) },
-          { key: "awaiting_review",   label: "Awaiting Review",      value: awaiting_review.count, severity: severity(awaiting_review.count, 5, 2) }
+          { key: "open_issues",       label: "Open Issues",          value: open_issues.count,     severity: severity(open_issues.count,  10, 5),  domain: "issues" },
+          { key: "overdue_issues",    label: "Overdue Issues",       value: overdue_i.count,       severity: severity(overdue_i.count,    3, 1),   domain: "issues" },
+          { key: "stale_issues",      label: "Stale Issues",         value: stale_i.count,         severity: severity(stale_i.count,      5, 2),   domain: "issues" },
+          { key: "unassigned_issues", label: "Unassigned Issues",    value: unassigned_i.count,    severity: unassigned_i.count > 0 ? "warning" : "good", domain: "issues" },
+          { key: "closed_this_week",  label: "Issues Closed (7d)",   value: closed_week.count,     severity: closed_week.count > 0 ? "good" : "warning",  domain: "issues" },
+          { key: "overdue_rfis",      label: "Overdue RFIs",         value: overdue_rfis.count,    severity: severity(overdue_rfis.count,   2, 1),  domain: "rfis" },
+          { key: "impactful_rfis",    label: "RFIs with Impact",     value: impactful_rfis.count,  severity: severity(impactful_rfis.count, 3, 1),  domain: "rfis" },
+          { key: "overdue_subs",      label: "Overdue Submittals",   value: overdue_subs.count,    severity: severity(overdue_subs.count,   3, 1),  domain: "submittals" },
+          { key: "awaiting_review",   label: "Awaiting Review",      value: awaiting_review.count, severity: severity(awaiting_review.count, 5, 2), domain: "submittals" }
         ]
       end
 

@@ -95,6 +95,20 @@ module Auth
         nil
       end
 
+      def revoke_token(token)
+        RestClient.post(
+          "#{base_url}/authentication/v2/revoke",
+          { token: token, token_type_hint: "access_token" },
+          {
+            Authorization: "Basic #{basic_auth_token}",
+            content_type: "application/x-www-form-urlencoded"
+          }
+        )
+        Rails.logger.info("Token revoked successfully")
+      rescue => e
+        Rails.logger.warn("Token revocation failed: #{e.message}")
+      end
+
       # ── User info ─────────────────────────────────────────────────────────
 
       def fetch_user_info(access_token)

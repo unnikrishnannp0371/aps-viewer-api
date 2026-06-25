@@ -17,7 +17,7 @@ module Aps
 
     def get_hubs
       data = get("/project/v1/hubs", @token)
-      data["data"].map do |hub|
+      (data["data"] || []).map do |hub|
         {
           id:   encode_id(hub["id"]),
           name: hub.dig("attributes", "name"),
@@ -32,7 +32,7 @@ module Aps
       decoded_hub_id = decode_id(hub_id)
       data = get("/project/v1/hubs/#{decoded_hub_id}/projects", @token)
 
-      data["data"].map do |project|
+      (data["data"] || []).map do |project|
         {
           project_id: encode_id(project["id"]),
           hub_id:     hub_id,
