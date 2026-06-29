@@ -10,19 +10,19 @@
 #   Issues      40%  ← live
 #   RFIs        25%  ← live
 #   Submittals  20%  ← live
-#   Clashes     15%  ← neutral until Clash API connected
+#   Clashes     15%  ← live
 
 module Acc
   class HealthService
     class << self
-      def calculate(issues, rfis: [], submittals: [])
+      def calculate(issues, rfis: [], submittals: [], clashes: nil)
         today = Date.today
 
         domain_scores = {
-          issues:     { score: issues_score(issues, today),      weight: 0.40 },
-          rfis:       { score: rfi_score(rfis, today),           weight: 0.25 },
+          issues:     { score: issues_score(issues, today), weight: 0.40 },
+          rfis:       { score: rfi_score(rfis, today), weight: 0.25 },
           submittals: { score: submittal_score(submittals, today), weight: 0.20 },
-          clashes:    { score: 50,                               weight: 0.15 }
+          clashes: { score: clash_score(clashes), weight: 0.15, neutral: clashes.nil? || clashes[:total].to_i.zero? }
         }
 
         overall = calculate_overall(domain_scores)
@@ -32,7 +32,7 @@ module Acc
           grade:         grade(overall),
           label:         label(overall),
           domain_scores: domain_scores,
-          signals:       build_signals(issues, rfis, submittals, today),
+          signals:       build_signals(issues, rfis, submittals, clashes, today),
           calculated_at: Time.current.iso8601,
           data_available: issues.any? || rfis.any? || submittals.any?
         }
@@ -115,6 +115,16 @@ module Acc
         score.clamp(0, 100).round
       end
 
+      # ── Clash Score ─────────────────────────────────────────────────────────
+      def clash_score(clashes)
+        return 50 if clashes.nil?
+        return 50 if clashes[:total].to_i.zero?
+
+        closed = clashes.dig(:by_status, :closed).to_i
+        total  = clashes[:total].to_i
+        ((closed.to_f / total) * 100).round.clamp(0, 100)
+      end
+
       # ── Overall ─────────────────────────────────────────────────────────────
 
       def calculate_overall(domain_scores)
@@ -145,7 +155,7 @@ module Acc
 
       # ── Signals ─────────────────────────────────────────────────────────────
 
-      def build_signals(issues, rfis, submittals, today)
+      def build_signals(issues, rfis, submittals, clashes, today)
         # Issues signals
         open_issues  = issues.select { |i| i[:status] == "open" }
         overdue_i    = overdue_open(issues, today)
@@ -175,7 +185,9 @@ module Acc
           { key: "overdue_rfis",      label: "Overdue RFIs",         value: overdue_rfis.count,    severity: severity(overdue_rfis.count,   2, 1),  domain: "rfis" },
           { key: "impactful_rfis",    label: "RFIs with Impact",     value: impactful_rfis.count,  severity: severity(impactful_rfis.count, 3, 1),  domain: "rfis" },
           { key: "overdue_subs",      label: "Overdue Submittals",   value: overdue_subs.count,    severity: severity(overdue_subs.count,   3, 1),  domain: "submittals" },
-          { key: "awaiting_review",   label: "Awaiting Review",      value: awaiting_review.count, severity: severity(awaiting_review.count, 5, 2), domain: "submittals" }
+          { key: "awaiting_review",   label: "Awaiting Review",      value: awaiting_review.count, severity: severity(awaiting_review.count, 5, 2), domain: "submittals" },
+          { key: "total_clashes",      label: "Total Clashes",      value: clashes&.dig(:total).to_i,                severity: severity(clashes&.dig(:total).to_i, 100, 20), domain: "clashes" },
+          { key: "unresolved_clashes", label: "Unresolved Clashes",  value: clashes&.dig(:by_status, :new).to_i,      severity: clashes&.dig(:by_status, :new).to_i.positive? ? "critical" : "good", domain: "clashes" }
         ]
       end
 
