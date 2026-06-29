@@ -20,8 +20,14 @@ class Api::V1::HealthController < ApplicationController
     issues     = issues_service.get_all_for_health(container_id)
     rfis       = Acc::RfisService.get_all_for_health(project_id, current_access_token)
     submittals = Acc::SubmittalsService.get_all_for_health(project_id, current_access_token)
+    clashes = Acc::ClashesService.new(token: current_access_token).summary(project_id)
 
-    render json: Acc::HealthService.calculate(issues, rfis: rfis, submittals: submittals)
+
+    render json: Acc::HealthService.calculate(issues, rfis: rfis, submittals: submittals, clashes: clashes)
+
+  rescue StandardError => e
+    Rails.logger.error("HealthController#index — #{e.message}")
+    render json: { error: e.message }, status: :bad_gateway
   end
 
   private

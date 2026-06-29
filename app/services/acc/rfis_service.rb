@@ -2,7 +2,7 @@ require "cgi"
 require_relative "../concerns/aps_http"
 
 module Acc
-  class RfisService
+  class RfisService < ApplicationService
     include ApsHttp
 
     PAGE_LIMIT      = 20
