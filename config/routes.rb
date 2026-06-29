@@ -40,9 +40,13 @@ Rails.application.routes.draw do
 
       # Health score
       get "projects/:project_id/health", to: "health#index"
+
+      # Clashes
+      get "projects/:project_id/clashes/summary", to: "clashes#summary"
+
+      # Viewer
+      get "viewer/auth/:urn", to: "viewer_auth#show"
+      get "viewer/:token",    to: "viewer#show"
     end
   end
-
-  # ── Viewer ─────────────────────────────────────────────────────────────────
-  get "viewer/:token", to: "api/v1/viewer#show"
 end
