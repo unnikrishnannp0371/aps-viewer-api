@@ -13,7 +13,7 @@
 #   Clashes     15%  ← live
 
 module Acc
-  class HealthService
+  class HealthService < ApplicationService
     class << self
       def calculate(issues, rfis: [], submittals: [], clashes: nil)
         today = Date.today

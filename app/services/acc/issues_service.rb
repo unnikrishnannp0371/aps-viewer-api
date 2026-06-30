@@ -2,7 +2,7 @@ require "cgi"
 require_relative "../concerns/aps_http"
 
 module Acc
-  class IssuesService
+  class IssuesService < ApplicationService
     include ApsHttp
 
     MAX_PER_PAGE    = 20
@@ -59,8 +59,7 @@ module Acc
     end
 
     def get_user_map(container_id)
-      data = get("/construction/admin/v1/projects/#{container_id}/users?limit=100", @token)
-      (data["results"] || []).each_with_object({}) do |user, map|
+      paginate("/construction/admin/v1/projects/#{container_id}/users", @token, page_size: 100).each_with_object({}) do |user, map|
         map[user["autodeskId"]] = user["name"]
       end
     end
@@ -189,7 +188,7 @@ module Acc
       details = linked&.dig("details")
 
       assigned_to = if issue["assignedToType"] == "user"
-        user_map[issue["assignedTo"]] || "User #{issue["assignedTo"]&.first(8)}"
+        user_map[issue["assignedTo"]].titleize || "User #{issue["assignedTo"]&.first(8)}"
       elsif issue["assignedToType"] == "company"
         "Company"
       end
