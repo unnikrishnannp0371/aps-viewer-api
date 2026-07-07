@@ -22,11 +22,13 @@ module Acc
       type_map = get_issue_type_map(container_id)
       user_map = get_user_map(container_id)
 
-      page_data = fetch_issues_page(container_id, filters, limit, offset)
-      issues    = page_data["results"] || []
-      total     = page_data.dig("pagination", "totalResults").to_i
+      all_raw = paginate(ISSUES_PATH[container_id], @token)
 
-      all_formatted = fetch_all_formatted(container_id, type_map, user_map)
+      filtered_raw = filter_raw_issues(all_raw, filters)
+      total        = filtered_raw.size
+      issues       = filtered_raw[offset, limit] || []
+
+      all_formatted = all_raw.map { |i| format_issue(i, type_map, user_map) }
 
       {
         total:       total,
@@ -47,20 +49,24 @@ module Acc
     end
 
     def get_issue_type_map(container_id)
-      data = get("/construction/issues/v1/projects/#{container_id}/issue-types?include=subtypes&limit=100", @token)
-      map = {}
-      (data["results"] || []).each do |type|
-        map[type["id"]] = type["title"]
-        (type["subtypes"] || []).each do |subtype|
-          map[subtype["id"]] = subtype["title"]
+      Rails.cache.fetch("issues:type_map:#{container_id}", expires_in: 15.minutes) do
+        data = get("/construction/issues/v1/projects/#{container_id}/issue-types?include=subtypes&limit=100", @token)
+        map = {}
+        (data["results"] || []).each do |type|
+          map[type["id"]] = type["title"]
+          (type["subtypes"] || []).each do |subtype|
+            map[subtype["id"]] = subtype["title"]
+          end
         end
+        map
       end
-      map
     end
 
     def get_user_map(container_id)
-      paginate("/construction/admin/v1/projects/#{container_id}/users", @token, page_size: 100).each_with_object({}) do |user, map|
-        map[user["autodeskId"]] = user["name"]
+      Rails.cache.fetch("issues:user_map:#{container_id}", expires_in: 15.minutes) do
+        paginate("/construction/admin/v1/projects/#{container_id}/users", @token, page_size: 100).each_with_object({}) do |user, map|
+          map[user["autodeskId"]] = user["name"]
+        end
       end
     end
 
@@ -96,12 +102,10 @@ module Acc
       paginate(ISSUES_PATH[container_id], @token).map { |i| format_issue(i, type_map, user_map) }
     end
 
-    def fetch_issues_page(container_id, filters, limit, offset)
-      params = {}
-      params["filter[status]"]     = filters["status"]      if filters["status"].present?
-      params["filter[assignedTo]"] = filters["assigned_to"] if filters["assigned_to"].present?
-      params = build_params(params.merge(offset: offset, limit: limit))
-      get("#{ISSUES_PATH[container_id]}?#{params}", @token)
+    def filter_raw_issues(raw, filters)
+      raw = raw.select { |i| i["status"] == filters["status"] }           if filters["status"].present?
+      raw = raw.select { |i| i["assignedTo"] == filters["assigned_to"] }  if filters["assigned_to"].present?
+      raw
     end
 
     # ── Attention KPIs ────────────────────────────────────────────────────
@@ -188,7 +192,7 @@ module Acc
       details = linked&.dig("details")
 
       assigned_to = if issue["assignedToType"] == "user"
-        user_map[issue["assignedTo"]].titleize || "User #{issue["assignedTo"]&.first(8)}"
+        user_map[issue["assignedTo"]]&.titleize || "User #{issue["assignedTo"]&.first(8)}"
       elsif issue["assignedToType"] == "company"
         "Company"
       end

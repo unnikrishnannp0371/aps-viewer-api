@@ -30,14 +30,17 @@ module Acc
     # ── Panel API ─────────────────────────────────────────────────────────
 
     def list(project_id:, offset: 0, limit: PAGE_LIMIT, filters: {})
-      all_rfis  = fetch_all(project_id)
-      page_rfis = fetch_page(project_id, offset: offset, limit: limit, filters: filters)
+      all_rfis = fetch_all(project_id)
+
+      filtered_rfis = filter_raw_rfis(all_rfis, filters)
+      page_limit    = [ limit, PAGE_LIMIT ].min
+      page_rfis     = filtered_rfis[offset, page_limit] || []
 
       {
-        rfis:      enrich_with_risk(normalize_rfis(page_rfis["results"] || [])),
-        total:     page_rfis.dig("pagination", "totalResults").to_i,
-        offset:    page_rfis.dig("pagination", "offset").to_i,
-        limit:     page_rfis.dig("pagination", "limit").to_i,
+        rfis:      enrich_with_risk(normalize_rfis(page_rfis)),
+        total:     filtered_rfis.size,
+        offset:    offset,
+        limit:     page_limit,
         by_status: compute_status_counts(all_rfis),
         attention: compute_attention(all_rfis)
       }
@@ -49,6 +52,15 @@ module Acc
 
     def fetch_all(project_id)
       paginate(RFIS_PATH[project_id], @token, page_size: FETCH_LIMIT)
+    end
+
+    def filter_raw_rfis(raw, filters)
+      raw = raw.select { |r| r["status"] == filters[:status] } if filters[:status].present?
+      if filters[:title].present?
+        needle = filters[:title].downcase
+        raw = raw.select { |r| r["title"]&.downcase&.include?(needle) }
+      end
+      raw
     end
 
     # Minimal projection used by HealthService — avoids sending unnecessary
@@ -64,13 +76,6 @@ module Acc
           schedule_impact: r["scheduleImpact"]
         }
       end
-    end
-
-    def fetch_page(project_id, offset:, limit:, filters:)
-      params = { offset: offset, limit: [ limit, PAGE_LIMIT ].min }
-      params["filter[status]"] = filters[:status] if filters[:status].present?
-      params["filter[title]"]  = filters[:title]  if filters[:title].present?
-      get("#{RFIS_PATH[project_id]}?#{build_params(params)}", @token)
     end
 
     # ── Attention KPIs ─────────────────────────────────────────────────────

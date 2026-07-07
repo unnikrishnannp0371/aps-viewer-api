@@ -15,13 +15,36 @@ class Api::V1::HealthController < ApplicationController
       return
     end
 
-    project_id = ApplicationService.acc_project_id(project_id)
+    acc_id = ApplicationService.acc_project_id(project_id)
+    token  = current_access_token
 
-    issues     = issues_service.get_all_for_health(container_id)
-    rfis       = Acc::RfisService.get_all_for_health(project_id, current_access_token)
-    submittals = Acc::SubmittalsService.get_all_for_health(project_id, current_access_token)
-    clashes = Acc::ClashesService.new(token: current_access_token).summary(project_id)
+    issues_thread = Thread.new do
+      t0 = Time.now
+      result = Acc::IssuesService.new(token: token).get_all_for_health(container_id)
+      Rails.logger.info("[health timing] issues: #{((Time.now - t0) * 1000).round}ms")
+      result
+    end
+    rfis_thread = Thread.new do
+      t0 = Time.now
+      result = Acc::RfisService.get_all_for_health(acc_id, token)
+      Rails.logger.info("[health timing] rfis: #{((Time.now - t0) * 1000).round}ms")
+      result
+    end
+    submittals_thread = Thread.new do
+      t0 = Time.now
+      result = Acc::SubmittalsService.get_all_for_health(acc_id, token)
+      Rails.logger.info("[health timing] submittals: #{((Time.now - t0) * 1000).round}ms")
+      result
+    end
+    clashes_thread = Thread.new do
+      t0 = Time.now
+      result = Acc::ClashesService.new(token: token).summary(acc_id)
+      Rails.logger.info("[health timing] clashes: #{((Time.now - t0) * 1000).round}ms")
+      result
+    end
 
+    issues, rfis, submittals, clashes =
+      [ issues_thread, rfis_thread, submittals_thread, clashes_thread ].map(&:value)
 
     render json: Acc::HealthService.calculate(issues, rfis: rfis, submittals: submittals, clashes: clashes)
 
@@ -34,9 +57,5 @@ class Api::V1::HealthController < ApplicationController
 
   def dm_service
     @dm_service ||= Aps::DataManagementService.new(token: current_access_token)
-  end
-
-  def issues_service
-    @issues_service ||= Acc::IssuesService.new(token: current_access_token)
   end
 end
