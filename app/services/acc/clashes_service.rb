@@ -22,8 +22,10 @@ module Acc
     CLASH_BASE    = "/bim360/clash/v3".freeze
     CACHE_TTL     = 3600
 
-    @cache       = {}
-    @cache_mutex = Mutex.new
+    @cache        = {}
+    @cache_mutex  = Mutex.new
+    @fetch_locks  = Hash.new
+    @locks_mutex  = Mutex.new
 
     class << self
       def clear_cache(container_id)
@@ -44,6 +46,14 @@ module Acc
           @cache[container_id] = { data: data, cached_at: Time.now }
         end
       end
+
+      # One mutex per container_id, so concurrent requests for the SAME
+      # container serialize (second caller waits, then reads the cache the
+      # first caller just populated) while different containers never block
+      # each other.
+      def fetch_lock_for(container_id)
+        @locks_mutex.synchronize { @fetch_locks[container_id] ||= Mutex.new }
+      end
     end
 
     def initialize(token:)
@@ -54,35 +64,43 @@ module Acc
     # {
     #   total:     Integer,
     #   by_status: { new: Integer, assigned: Integer, closed: Integer },
-    #   modelsets: [{ modelSetId:, name:, total:, by_status:, lastTestedOn: }]
+    #   modelsets: [{ modelSetId:, name:, total:, by_status:, lastTestedOn:,
+    #                 clashes: [{ id:, status:, modelSetId: }] }]
     # }
     def summary(container_id)
+      cached = self.class.cached(container_id)
+      return cached if cached
+
+      self.class.fetch_lock_for(container_id).synchronize do
+        # Another thread may have finished fetching while we were waiting
+        # for this lock — check again before doing the work ourselves.
         cached = self.class.cached(container_id)
         return cached if cached
 
-      modelsets = fetch_modelsets(container_id)
-                    .reject { |ms| ms["isDisabled"] || ms["isDeleted"] }
+        modelsets = fetch_modelsets(container_id)
+                      .reject { |ms| ms["isDisabled"] || ms["isDeleted"] }
 
-      modelset_summaries = modelsets.filter_map do |ms|
-        build_modelset_summary(container_id, ms)
+        modelset_summaries = modelsets.filter_map do |ms|
+          build_modelset_summary(container_id, ms)
+        end
+
+        total_by_status = modelset_summaries.each_with_object(
+          { new: 0, assigned: 0, closed: 0 }
+        ) do |ms, acc|
+          acc[:new]      += ms[:by_status][:new]
+          acc[:assigned] += ms[:by_status][:assigned]
+          acc[:closed]   += ms[:by_status][:closed]
+        end
+
+        result = {
+          total:     total_by_status.values.sum,
+          by_status: total_by_status,
+          modelsets: modelset_summaries
+        }
+
+        self.class.store_cache(container_id, result)
+        result
       end
-
-      total_by_status = modelset_summaries.each_with_object(
-        { new: 0, assigned: 0, closed: 0 }
-      ) do |ms, acc|
-        acc[:new]      += ms[:by_status][:new]
-        acc[:assigned] += ms[:by_status][:assigned]
-        acc[:closed]   += ms[:by_status][:closed]
-      end
-
-      result = {
-        total:     total_by_status.values.sum,
-        by_status: total_by_status,
-        modelsets: modelset_summaries
-      }
-
-      self.class.store_cache(container_id, result)
-      result
     end
 
     private
@@ -90,21 +108,27 @@ module Acc
     def fetch_modelsets(container_id)
       body = get("#{MODELSET_BASE}/containers/#{container_id}/modelsets", @token)
       body["modelSets"] || []
+    rescue StandardError
+      []
     end
 
     def build_modelset_summary(container_id, ms)
+      t0 = Time.now
       latest_test = fetch_latest_test(container_id, ms["modelSetId"])
       return nil unless latest_test
 
-      counts = fetch_clash_counts(container_id, latest_test["id"])
-      return nil unless counts
+      counts_and_clashes = fetch_clash_counts(container_id, latest_test["id"], ms["modelSetId"])
+      return nil unless counts_and_clashes
+
+      Rails.logger.info("[clashes timing] modelset #{ms['modelSetId']}: #{((Time.now - t0) * 1000).round}ms")
 
       {
         modelSetId:   ms["modelSetId"],
         name:         ms["name"],
-        total:        counts.values.sum,
-        by_status:    counts,
-        lastTestedOn: latest_test["completedOn"]
+        total:        counts_and_clashes[:counts].values.sum,
+        by_status:    counts_and_clashes[:counts],
+        lastTestedOn: latest_test["completedOn"],
+        clashes:      counts_and_clashes[:clashes]
       }
     rescue => e
       Rails.logger.warn("ClashesService: skipping modelset #{ms['modelSetId']}: #{e.message}")
@@ -112,48 +136,50 @@ module Acc
     end
 
     def fetch_latest_test(container_id, model_set_id)
-    body  = get("#{CLASH_BASE}/containers/#{container_id}/modelsets/#{model_set_id}/tests", @token)
-    tests = body["tests"] || []
-    tests.select { |t| t["status"] == "Success" }
-        .max_by { |t| t["modelSetVersion"].to_i }
+      body  = get("#{CLASH_BASE}/containers/#{container_id}/modelsets/#{model_set_id}/tests", @token)
+      tests = body["tests"] || []
+      tests.select { |t| t["status"] == "Success" }
+          .max_by { |t| t["modelSetVersion"].to_i }
     rescue StandardError
-    nil
+      nil
     end
 
-    def fetch_clash_counts(container_id, test_id)
+    def fetch_clash_counts(container_id, test_id, model_set_id)
       body      = get("#{CLASH_BASE}/containers/#{container_id}/tests/#{test_id}/resources", @token)
       resources = body["resources"] || []
 
       resource = resources.find { |r| r["type"] == "scope-version-clash.2.0.0" }
       return nil unless resource
 
-      download_and_count(resource["url"])
+      download_and_count(resource["url"], model_set_id)
     end
 
     # S3 signed URL — different host, no auth header needed.
-    def download_and_count(s3_url)
-    response = RestClient::Request.execute(
-        method: :get, url: s3_url, timeout: 30, open_timeout: 10
-    )
+    def download_and_count(s3_url, model_set_id)
+      response = RestClient::Request.execute(
+          method: :get, url: s3_url, timeout: 30, open_timeout: 10
+      )
 
-    body    = response.body.force_encoding("UTF-8")
-    clashes = JSON.parse(body.sub(/\A\xEF\xBB\xBF/, ""))["clashes"] || []
+      body    = response.body.force_encoding("UTF-8")
+      raw_clashes = JSON.parse(body.sub(/\A\xEF\xBB\xBF/, ""))["clashes"] || []
 
-    counts = { new: 0, assigned: 0, closed: 0 }
-    clashes.each do |c|
+      counts = { new: 0, assigned: 0, closed: 0 }
+      retained_clashes = raw_clashes.map do |c|
         case c["status"]
         when 1 then counts[:new]      += 1
         when 2 then counts[:assigned] += 1
         when 3 then counts[:closed]   += 1
         end
-    end
-    counts
+        { id: c["id"], status: c["status"], modelSetId: model_set_id }
+      end
+
+      { counts: counts, clashes: retained_clashes }
     rescue RestClient::ExceptionWithResponse => e
-    Rails.logger.error("ClashesService S3 download failed: #{e.response.code}")
-    nil
+      Rails.logger.error("ClashesService S3 download failed: #{e.response.code}")
+      nil
     rescue StandardError => e
-    Rails.logger.error("ClashesService S3 download failed: #{e.message}")
-    nil
+      Rails.logger.error("ClashesService S3 download failed: #{e.message}")
+      nil
     end
   end
 end

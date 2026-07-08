@@ -50,13 +50,16 @@ module Acc
 
     def list(project_id:, offset: 0, limit: PAGE_LIMIT, filters: {})
       all_submittals = fetch_all(project_id)
-      page_submittals = fetch_page(project_id, offset:, limit:, filters:)
+
+      filtered_submittals = filter_raw_submittals(all_submittals, filters)
+      page_limit          = [ limit, PAGE_LIMIT ].min
+      page_submittals     = filtered_submittals[offset, page_limit] || []
 
       {
-        submittals: enrich_with_risk((page_submittals["results"] || []).map { |s| normalize_submittal(s) }),
-        total: page_submittals.dig("pagination", "totalResults").to_i,
-        offset: page_submittals.dig("pagination", "offset").to_i,
-        limit: page_submittals.dig("pagination", "limit").to_i,
+        submittals: enrich_with_risk(page_submittals.map { |s| normalize_submittal(s) }),
+        total: filtered_submittals.size,
+        offset: offset,
+        limit: page_limit,
         by_status: compute_status_counts(all_submittals),
         attention: compute_attention(all_submittals)
       }
@@ -73,6 +76,12 @@ module Acc
       raise
     end
 
+    def filter_raw_submittals(raw, filters)
+      raw = raw.select { |s| s["statusId"] == filters[:status_id] } if filters[:status_id].present?
+      raw = raw.select { |s| s["specId"] == filters[:spec_id] }     if filters[:spec_id].present?
+      raw
+    end
+
     def fetch_all_for_health(project_id)
       fetch_all(project_id).map do |s|
         {
@@ -86,13 +95,6 @@ module Acc
           updated_at: s["updatedAt"]
         }
       end
-    end
-
-    def fetch_page(project_id, offset:, limit:, filters:)
-      params = { offset:, limit: [ limit, PAGE_LIMIT ].min }
-      params["filter[statusId]"] = filters[:status_id] if filters[:status_id].present?
-      params["filter[specId]"]   = filters[:spec_id]   if filters[:spec_id].present?
-      get("#{SubmittalsService::SUBMITTALS_PATH[project_id]}?#{build_params(params)}", @token)
     end
 
     # ── Attention KPIs ────────────────────────────────────────────────────────

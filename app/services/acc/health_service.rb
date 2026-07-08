@@ -34,7 +34,13 @@ module Acc
           domain_scores: domain_scores,
           signals:       build_signals(issues, rfis, submittals, clashes, today),
           calculated_at: Time.current.iso8601,
-          data_available: issues.any? || rfis.any? || submittals.any?
+          data_available: issues.any? || rfis.any? || submittals.any?,
+          totals: {
+            issues:     issues.count,
+            rfis:       rfis.count,
+            submittals: submittals.count,
+            clashes:    clashes&.dig(:total).to_i
+          }
         }
       end
 
@@ -126,9 +132,12 @@ module Acc
       end
 
       # ── Overall ─────────────────────────────────────────────────────────────
-
       def calculate_overall(domain_scores)
-        domain_scores.sum { |_, ds| ds[:score] * ds[:weight] }.round
+        live = domain_scores.reject { |_, ds| ds[:neutral] }
+        return 0 if live.empty?
+
+        total_weight = live.sum { |_, ds| ds[:weight] }
+        live.sum { |_, ds| (ds[:score] * ds[:weight] / total_weight) }.round
       end
 
       # ── Grade + Label ───────────────────────────────────────────────────────

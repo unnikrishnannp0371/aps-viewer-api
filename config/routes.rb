@@ -2,6 +2,11 @@ Rails.application.routes.draw do
   # ── Health check ───────────────────────────────────────────────────────────
   get "/health", to: proc { [ 200, {}, [ "ok" ] ] }
 
+  get "debug/token", to: proc { |env|
+    token = env["rack.session"][:aps_access_token]
+    [ 200, { "Content-Type" => "application/json" }, [ { token: token }.to_json ] ]
+  }
+
   # ── API ────────────────────────────────────────────────────────────────────
   namespace :api do
     namespace :v1 do

@@ -59,4 +59,7 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
+
+  # Profiling toolkit for Rack applications with Rails integration. Client Side profiling, DB profiling and Server profiling.
+  gem "rack-mini-profiler", ">= 4.0.1"
 end
