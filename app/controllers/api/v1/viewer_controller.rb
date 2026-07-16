@@ -23,7 +23,8 @@ class Api::V1::ViewerController < ApplicationController
       urn: shared_link.urn,
       token: viewer_token,
       file_name: shared_link.file_name,
-      expires_at: shared_link.expires_at
+      expires_at: shared_link.expires_at,
+      is_shared: true
     }
   rescue StandardError => e
     render json: { error: e.message }, status: :internal_server_error
