@@ -29,6 +29,8 @@ class Api::V1::SubmittalsController < ApplicationController
     {}.tap do |f|
       f[:status_id] = params[:status_id] if params[:status_id].present?
       f[:spec_id]   = params[:spec_id]   if params[:spec_id].present?
+      f[:spec]      = params[:spec]      if params[:spec].present?
+      f[:manager]   = params[:manager]   if params[:manager].present?
     end
   end
 end

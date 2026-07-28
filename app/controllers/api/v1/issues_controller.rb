@@ -7,7 +7,7 @@ class Api::V1::IssuesController < ApplicationController
     container_id = project_container_id
     return unless container_id
 
-    filters  = params.permit(:status, :assigned_to, :limit, :offset).to_h
+    filters  = params.permit(:status, :type, :assigned_to, :limit, :offset).to_h
     summary  = issues_service.get_issues_summary(container_id, filters)
     render json: summary
   rescue StandardError => e

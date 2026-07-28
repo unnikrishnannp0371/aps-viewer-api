@@ -31,8 +31,10 @@ class Api::V1::RfisController < ApplicationController
   # Note: RfisService uses :title for subject searches, not :subject.
   def extract_filters
     {}.tap do |f|
-      f[:status] = params[:status] if params[:status].present?
-      f[:title]  = params[:title]  if params[:title].present?
+      f[:status]      = params[:status]      if params[:status].present?
+      f[:title]       = params[:title]       if params[:title].present?
+      f[:discipline]  = params[:discipline]  if params[:discipline].present?
+      f[:assigned_to] = params[:assigned_to] if params[:assigned_to].present?
     end
   end
 end
