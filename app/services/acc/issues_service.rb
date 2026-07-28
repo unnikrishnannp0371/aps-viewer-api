@@ -22,24 +22,22 @@ module Acc
       type_map = get_issue_type_map(container_id)
       user_map = get_user_map(container_id)
 
-      all_raw = paginate(ISSUES_PATH[container_id], @token)
+      all_raw       = paginate(ISSUES_PATH[container_id], @token)
+      p all_raw.first(3)
+      all_formatted = enrich_with_risk(all_raw.map { |i| format_issue(i, type_map, user_map) })
 
-      filtered_raw = filter_raw_issues(all_raw, filters)
-      total        = filtered_raw.size
-      issues       = filtered_raw[offset, limit] || []
-
-      all_formatted = all_raw.map { |i| format_issue(i, type_map, user_map) }
+      filtered = filter_issues(all_formatted, filters)
 
       {
-        total:       total,
+        total:       filtered.size,
         offset:      offset,
         limit:       limit,
         by_status:   group_by_status(all_formatted),
         by_type:     group_by_type(all_formatted),
         by_assignee: group_by_assignee(all_formatted),
         attention:   compute_attention(all_formatted),
-        recent_open: recent_open(issues, type_map, user_map),
-        issues:      enrich_with_risk(issues.map { |i| format_issue(i, type_map, user_map) })
+        recent_open: recent_open(filtered),
+        issues:      filtered
       }
     end
 
@@ -102,35 +100,43 @@ module Acc
       paginate(ISSUES_PATH[container_id], @token).map { |i| format_issue(i, type_map, user_map) }
     end
 
-    def filter_raw_issues(raw, filters)
-      raw = raw.select { |i| i["status"] == filters["status"] }           if filters["status"].present?
-      raw = raw.select { |i| i["assignedTo"] == filters["assigned_to"] }  if filters["assigned_to"].present?
-      raw
+    def filter_issues(issues, filters)
+      issues = issues.select { |i| i[:status] == filters["status"] }             if filters["status"].present?
+      issues = issues.select { |i| i[:issue_sub_type] == filters["type"] }       if filters["type"].present?
+      issues = issues.select { |i| i[:assigned_to] == filters["assigned_to"] }   if filters["assigned_to"].present?
+      issues
     end
 
     # ── Attention KPIs ────────────────────────────────────────────────────
 
+    # Each issue gets AT MOST ONE reason (overdue > stale > unassigned),
+    # so the three counts below always sum to the number of active issues
+    # that need attention — same waterfall as HealthService#issue_reason.
     def compute_attention(all_issues)
-      today  = Date.today
-      active = all_issues.select { |i| ACTIVE_STATUSES.include?(i[:status]) }
-
-      overdue    = active.select { |i| i[:due_date].present? && Date.parse(i[:due_date].to_s) < today }
-      unassigned = active.select { |i| i[:assigned_to].blank? }
-      stale      = active.select { |i| i[:created_at].present? && Date.parse(i[:created_at].to_s) < (today - 30) }
+      today = Date.today
+      reasons = all_issues.map { |i| attention_reason(i, today) }.tally
 
       {
-        overdue:        overdue.count,
-        unassigned:     unassigned.count,
-        stale:          stale.count,
+        overdue:        reasons[:overdue] || 0,
+        unassigned:     reasons[:unassigned] || 0,
+        stale:          reasons[:stale] || 0,
         avg_resolution: average_resolution_days(all_issues)
       }
     end
 
+    def attention_reason(i, today)
+      return nil unless ACTIVE_STATUSES.include?(i[:status])
+      return :overdue    if i[:due_date].present? && Date.parse(i[:due_date].to_s) < today
+      return :stale      if i[:status] == "open" && i[:created_at].present? && Date.parse(i[:created_at].to_s) < (today - 30)
+      return :unassigned if i[:assigned_to].blank?
+      nil
+    end
+
     def average_resolution_days(all_issues)
-      closed = all_issues.select { |i| i[:status] == "closed" && i[:created_at].present? && i[:updated_at].present? }
+      closed = all_issues.select { |i| i[:status] == "closed" && i[:created_at].present? && i[:closed_at].present? }
       return nil if closed.empty?
 
-      total_days = closed.sum { |i| (Date.parse(i[:updated_at].to_s) - Date.parse(i[:created_at].to_s)).to_i.abs }
+      total_days = closed.sum { |i| (Date.parse(i[:closed_at].to_s) - Date.parse(i[:created_at].to_s)).to_i.abs }
       (total_days.to_f / closed.count).round(1)
     end
 
@@ -178,11 +184,10 @@ module Acc
             .sort_by { |_, v| -v }.first(10).to_h
     end
 
-    def recent_open(issues, type_map = {}, user_map = {})
-      issues.select { |i| i["status"] == "open" }
-            .sort_by { |i| i["createdAt"] || "" }
+    def recent_open(issues)
+      issues.select { |i| i[:status] == "open" }
+            .sort_by { |i| i[:created_at] || "" }
             .last(5).reverse
-            .map { |i| format_issue(i, type_map, user_map) }
     end
 
     # ── Formatting ────────────────────────────────────────────────────────
@@ -212,6 +217,7 @@ module Acc
         description:    issue["description"],
         viewable_id:    linked&.dig("urn"),
         external_id:    issue["displayId"],
+        closed_at:      issue["closedAt"],
         pushpin: details ? {
           location:      details.dig("position"),
           objectId:      details.dig("objectId"),
