@@ -1,4 +1,3 @@
-require_relative "base"
 require "uri"
 
 module Aps
