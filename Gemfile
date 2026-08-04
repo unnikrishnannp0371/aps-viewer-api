@@ -46,6 +46,8 @@ gem "dotenv-rails"
 # The CSV library provides a complete interface to CSV files and data. It offers tools to enable you to read and write to and from Strings or IO objects, as needed.
 gem "csv", "~> 3.0"
 
+# Use aps_client for interacting with Autodesk Platform Services (APS) APIs
+gem "aps_client", git: "https://github.com/unnikrishnannp0371/aps_client.git", tag: "v0.1.2"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
