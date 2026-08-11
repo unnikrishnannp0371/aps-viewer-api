@@ -20,7 +20,7 @@ class Api::V1::AuthController < ApplicationController
     session[:aps_access_token]  = token_response["access_token"]
     session[:aps_refresh_token] = token_response["refresh_token"]
     session[:aps_expires_at]    = Time.current.to_i + token_response["expires_in"].to_i
-\
+
     redirect_to ENV.fetch("FRONTEND_ADMIN_URL", "http://localhost/admin"),
                 allow_other_host: true
   end
