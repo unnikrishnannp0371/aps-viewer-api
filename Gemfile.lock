@@ -1,7 +1,7 @@
 GIT
   remote: https://github.com/unnikrishnannp0371/aps_client.git
-  revision: cb31a31fd30ea8133186f1322909295916dbe627
-  tag: v0.1.4
+  revision: b36aee93d384d27751553624ed869b5e0ab5c348
+  tag: v0.1.5
   specs:
     aps_client (0.1.0)
       rest-client
