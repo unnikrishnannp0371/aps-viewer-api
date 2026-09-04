@@ -5,10 +5,10 @@ module Aps
     class << self
       # Kick off a model derivative (SVF2) translation job.
       def translate(encoded_urn, access_token)
-        raw_urn = Base64.urlsafe_decode64(encoded_urn)
+        # raw_urn = Base64.urlsafe_decode64(encoded_urn)
         payload = {
-          input:  { urn: raw_urn },
-          output: { formats: [ { type: "svf2", views: %w[2d 3d] } ] }
+          input:  { urn: encoded_urn },
+          output: { formats: [ { type: "svf", views: %w[2d 3d] } ] }
         }.to_json
 
         response = RestClient.post(
