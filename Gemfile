@@ -47,7 +47,7 @@ gem "dotenv-rails"
 gem "csv", "~> 3.0"
 
 # Use aps_client for interacting with Autodesk Platform Services (APS) APIs
-gem "aps_client", git: "https://github.com/unnikrishnannp0371/aps_client.git", tag: "v0.1.5"
+gem "aps_client", git: "https://github.com/unnikrishnannp0371/aps_client.git", tag: "v0.1.7"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
