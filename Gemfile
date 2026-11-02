@@ -44,7 +44,7 @@ gem "rest-client", "~> 2.1"
 # Use dotenv to manage environment variables
 gem "dotenv-rails"
 # The CSV library provides a complete interface to CSV files and data. It offers tools to enable you to read and write to and from Strings or IO objects, as needed.
-gem "csv", "~> 3.0"
+gem "csv", "~> 3.3"
 
 # Use aps_client for interacting with Autodesk Platform Services (APS) APIs
 gem "aps_client", git: "https://github.com/unnikrishnannp0371/aps_client.git", tag: "v0.1.5"
